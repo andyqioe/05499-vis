@@ -34,7 +34,7 @@ for (let x = 0; x < amount; x++) {
  * converts social reputation to colorindex
  */
 function pickColor(i, state) {
-  let val = state[i]["reputation"]
+  let val = state["reputation"][i]
 	/* Bad rep */
 	if (0 <= val && val < 0.125) {
 		return colorArray[0]

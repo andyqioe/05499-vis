@@ -16,6 +16,7 @@ let mesh, sphere;
 
 const amount = parseInt(window.location.search.substr(1)) || 10;
 /* const count = Math.pow(amount, 3); */
+const size = 0.5
 const count = 150
 const dummy = new THREE.Object3D();
 const matrix = new THREE.Matrix4();
@@ -48,12 +49,14 @@ const colorArray = [
   new THREE.Color(0x00ff00),
 ];
 const colorArrLen = colorArray.length;
-const matrixPoints = [];
+let matrixPoints = [];
 
 /* Search parameters */
 const radii = 25 ** 2;
 
 /* json */
+let curState = 1 // Capout at 1000, indicates round number
+const timeScale = 10
 const payoffLen = 150;
 const repLen = 150;
 
@@ -87,7 +90,6 @@ function restructureData() {
 }
 
 
-
 /* ****************************************************************************
  * randomizeMatrix
  *
@@ -103,17 +105,8 @@ const randomizeMatrix = (function () {
   return function (matrix) {
     position.x = Math.random() * 40 - 20;
     position.z = Math.random() * 40 - 20;
-    position.y = Math.random() * 40 - 20;
-    /* position.y = 0; */
-
-    matrixPoints.push(position.x, position.y, position.z); /* key:value pair */
-
-    /* rotation.x = Math.random() * 2 * Math.PI;
-    rotation.y = Math.random() * 2 * Math.PI;
-    rotation.z = Math.random() * 2 * Math.PI; */
-
-    /* quaternion.setFromEuler(rotation); */
-
+    position.y = 0;
+    matrixPoints.push(position.x, position.y, position.z);
     scale.x = scale.y = scale.z = 1;
     matrix.compose(position, quaternion, scale);
   };
@@ -125,9 +118,49 @@ const randomizeMatrix = (function () {
  *
  * converts social reputation to colorindex
  */
-function pickColor() {
-  let val = ((Math.random() * 100) / 100) * colorArrLen;
-  return colorArray[Math.floor(val)];
+function pickColor(i, state) {
+  let val = state["reputation"][i]
+	/* Bad rep */
+	if (0 <= val && val < 0.25) {
+		return colorArray[0]
+	}
+	/* Kinda-bad rep */
+	else if (0.25 <= val && val < 0.45) {
+		return colorArray[1]
+	}
+	/* neutral rep */
+	else if (0.45 <= val && val < 0.55) {
+		return colorArray[2]
+	}
+	/* Good rep */
+	else if (0.55 <= val && val < 0.75) {
+		return colorArray[3]
+	}
+	/* Perfect rep */
+	else if (0.75 <= val && val <= 1) {
+		return colorArray[4]
+	}
+	return colorArray[0]
+}
+
+/* ****************************************************************************
+ * scaleData
+ *
+ *
+ * outputs an Array of scale factors to choose from
+ */
+function scaleData(state, prevstate) {
+	let scale
+	let val = state["payoff"]
+	let prevval = prevstate["payoff"]
+	var res = []
+
+	for (let i = 0; i < val.length; i++) {
+		scale = (val[i] - prevval[i]) / prevval[i]
+		res.push(scale)
+	}
+
+	return res
 }
 
 /* ****************************************************************************
@@ -149,17 +182,6 @@ function generateRandomIndex() {
  */
 
 function getDist(x1, y1, z1, x2, y2, z2) {
-  /* var x1 = p1[0];
-  var y1 = p1[1];
-  var z1 = p1[2];
-
-  var x2 = p2[0];
-  var y2 = p2[1];
-  var z2 = p2[2]; */
-
-  console.log(
-    Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2) + Math.pow(z2 - z1, 2)
-  );
   return Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2) + Math.pow(z2 - z1, 2);
 }
 
@@ -187,16 +209,7 @@ const generateEdges = (function () {
 
     mesh.getMatrixAt(i, matrix);
     matrix.decompose(position, quaternion, scale);
-    /* let p1 = (position.x, position.y, position.z); */
     points.push(new THREE.Vector3(position.x, position.y, position.z));
-
-    /* let neighbors = matrixPoints.filter(
-      (x, y, z) => getDist(position.x, position.y, position.z, x, y, z) < radii
-    ); */
-
-    /* console.log(neighbors.length);
-    console.log("HI"); */
-
     mesh.getMatrixAt(j, matrix);
     matrix.decompose(position, quaternion, scale);
     points.push(new THREE.Vector3(position.x, position.y, position.z));
@@ -223,21 +236,18 @@ function init() {
 
   scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x000000, 50, 200);
-  /* scene.background = new THREE.Color(0xffffff); */
 
   const loader = new THREE.BufferGeometryLoader();
   loader.load("models/json/suzanne_buffergeometry.json", function (geometry) {
     geometry.computeVertexNormals();
     geometry.scale(0.5, 0.5, 0.5);
-
-    /* const material = new THREE.MeshNormalMaterial(); */
     // check overdraw
     const material = new THREE.MeshBasicMaterial({
       opacity: 0.75,
       transparent: true,
     });
 
-    sphere = new THREE.IcosahedronGeometry(0.1, 5);
+    sphere = new THREE.IcosahedronGeometry(size, 5);
     mesh = new THREE.InstancedMesh(sphere, material, count);
     material.needsUpdate = true;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // will be updated every frame
@@ -246,12 +256,21 @@ function init() {
     for (let i = 0; i < count; i++) {
       randomizeMatrix(matrix);
       mesh.setMatrixAt(i, matrix);
-			mesh.setColorAt(i, pickColor())
+			mesh.setColorAt(i, pickColor(i, data[0]))
     }
 
     scene.add(mesh);
     /* generateEdges(0, 0); */
     /* Create edges */
+
+		/* for (let i = 0; i < count/10; i++) {
+      if (Math.random() < 0.5) {
+        continue;
+      }
+      for (let j = 0; j < count/10; j++) {
+        generateEdges(Math.floor(i*10), Math.floor(j*10));
+      }
+    } */
 
 		/* for (let i = 0; i < count; i++) {
       if (Math.random() < 0.5) {
@@ -277,32 +296,23 @@ function init() {
 
     guiStatsEl.innerHTML = ["05499 data vis"].join("<br/>");
   });
-
   //
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
-
-  //
-
-  /* stats = new Stats();
-  document.body.appendChild(stats.dom); */
-
   // controls
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 1.0;
-
+  controls.autoRotateSpeed = .5;
   window.addEventListener("resize", onWindowResize);
 }
 
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -312,18 +322,17 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   render();
+	
 }
 
 function render() {
-  const interval = Date.now() % 4;
-  if (mesh && interval == 0) {
-    /* const time = Date.now() * 0.001; */
-
-    /* mesh.rotation.x = Math.sin(time / 12);
-    mesh.rotation.y = Math.sin(time / 12); */
-
-    /* const offset = (amount - 1) / 2; */
-
+  const interval = Math.floor(Date.now()) % timeScale;
+	const interval2 = Math.floor(Date.now()) % timeScale*2;
+	if (interval2 == 0) {
+		curState += 1
+	}
+  if (mesh && interval == 0 && curState < 1000) {
+		let scaleList = scaleData(data[curState], data[curState-1])
 		for (let i = 0; i < count; i++) {
 			mesh.getMatrixAt(i, matrix);
 			/* dummy.position.set(offset - x, offset - y, offset - z);
@@ -336,14 +345,14 @@ function render() {
 			dummy.updateMatrix(); */
 
 			/* Decompose matrix, update positioning, and reupdate */
-			let a = generateRandomIndex();
-
+			/* let a = scaleList[i] */
+			let a = generateRandomIndex()
 			matrix.decompose(position, quaternion, scale);
 			scale.y *= a;
 			scale.x *= a;
 			scale.z *= a;
 			matrix.compose(position, quaternion, scale);
-			mesh.setColorAt(i, pickColor());
+			mesh.setColorAt(i, pickColor(i, data[curState]));
 			mesh.setMatrixAt(i, matrix);
 		}
     mesh.instanceColor.needsUpdate = true;
