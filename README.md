@@ -1,4 +1,4 @@
-# Data Visualization for 499 Final Project.
+# Data Visualization for 499 Final Project
 > My partner's implementation of the agent-based simulation: https://github.com/MilaHika/05499-final-project
 
 ## Sample GIF:
